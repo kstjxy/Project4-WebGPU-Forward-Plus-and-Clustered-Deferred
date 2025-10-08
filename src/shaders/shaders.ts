@@ -30,7 +30,17 @@ export const constants = {
 
     moveLightsWorkgroupSize: 128,
 
-    lightRadius: 2
+    lightRadius: 2,
+
+    // Forward+ / clustering constants
+    // XY cluster counts can be tuned for your device/resolution
+    // Z uses logarithmic splitting in shaders
+    // Match reference: 10x10x32 clusters
+    clusterCountX: 10,
+    clusterCountY: 10,
+    clusterCountZ: 32,
+    // Maximum number of lights tracked per cluster
+    maxLightsPerCluster: 1000
 };
 
 // =================================

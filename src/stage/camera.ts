@@ -3,15 +3,44 @@ import { toRadians } from "../math_util";
 import { device, canvas, fovYDegrees, aspectRatio } from "../renderer";
 
 class CameraUniforms {
-    readonly buffer = new ArrayBuffer(16 * 4);
+    // Layout (floats):
+    // 0..15   viewProjMat (mat4x4)
+    // 16..31  viewMat (mat4x4)
+    // 32..47  projMat (mat4x4)
+    // 48..63  invProjMat (mat4x4)
+    // 64      nearPlane
+    // 65      farPlane
+    // 66..67  padding
+    // 68..69  screenSize (width, height)
+    // 70..71  padding
+    readonly buffer = new ArrayBuffer(72 * 4);
     private readonly floatView = new Float32Array(this.buffer);
 
     set viewProjMat(mat: Float32Array) {
-        // copy the 4x4 matrix (16 floats) into the backing buffer
         this.floatView.set(mat.subarray(0, 16), 0);
     }
 
-    // TODO-2: add extra functions to set values needed for light clustering here
+    set viewMat(mat: Float32Array) {
+        this.floatView.set(mat.subarray(0, 16), 16);
+    }
+
+    set projMat(mat: Float32Array) {
+        this.floatView.set(mat.subarray(0, 16), 32);
+    }
+
+    set invProjMat(mat: Float32Array) {
+        this.floatView.set(mat.subarray(0, 16), 48);
+    }
+
+    set nearFar(vals: [number, number]) {
+        this.floatView[64] = vals[0];
+        this.floatView[65] = vals[1];
+    }
+
+    screenSizeWH(width: number, height: number) {
+        this.floatView[68] = width;
+        this.floatView[69] = height;
+    }
 }
 
 export class Camera {
@@ -133,8 +162,13 @@ export class Camera {
         const viewProjMat = mat4.mul(this.projMat, viewMat);
         // upload latest view-projection matrix to host-side uniform buffer
         this.uniforms.viewProjMat = viewProjMat as unknown as Float32Array;
-
-        // TODO-2: write to extra buffers needed for light clustering here
+        // extra camera data for clustering
+        this.uniforms.viewMat = viewMat as unknown as Float32Array;
+        this.uniforms.projMat = this.projMat as unknown as Float32Array;
+        const invProj = mat4.inverse(this.projMat);
+        this.uniforms.invProjMat = invProj as unknown as Float32Array;
+        this.uniforms.nearFar = [Camera.nearPlane, Camera.farPlane];
+        this.uniforms.screenSizeWH(canvas.width, canvas.height);
 
         // upload host-side buffer to device uniform buffer
         device.queue.writeBuffer(this.uniformsBuffer, 0, this.uniforms.buffer);
