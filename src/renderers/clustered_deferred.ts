@@ -14,11 +14,23 @@ export class ClusteredDeferredRenderer extends renderer.Renderer {
     gbufferSampler: GPUSampler;
 
     depthTexture: GPUTexture; depthTextureView: GPUTextureView;
+    sceneColorTex: GPUTexture; sceneColorView: GPUTextureView;
 
     gbufferPipeline: GPURenderPipeline;
     fullscreenBindGroupLayout: GPUBindGroupLayout;
     fullscreenBindGroup: GPUBindGroup;
     fullscreenPipeline: GPURenderPipeline;
+
+    // post-processing (toon)
+    ppOutputTex: GPUTexture; ppOutputView: GPUTextureView;
+    ppComputeBGL: GPUBindGroupLayout; ppComputeBG: GPUBindGroup;
+    ppComputePipeline: GPUComputePipeline; ppUniformsBuffer: GPUBuffer;
+    copyBGL: GPUBindGroupLayout; copyFromToonBG: GPUBindGroup; copyFromSceneBG: GPUBindGroup; copyPipeline: GPURenderPipeline;
+
+    // toon settings
+    private toonEnabled: boolean = false;
+    private toonLevels: number = 4;
+    private toonThreshold: number = 0.0025;
 
     constructor(stage: Stage) {
         super(stage);
@@ -84,9 +96,18 @@ export class ClusteredDeferredRenderer extends renderer.Renderer {
 
         this.depthTexture = renderer.device.createTexture({
             size, format: "depth24plus",
-            usage: GPUTextureUsage.RENDER_ATTACHMENT
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
         });
         this.depthTextureView = this.depthTexture.createView();
+
+        // color target for fullscreen lighting (offscreen)
+        this.sceneColorTex = renderer.device.createTexture({
+            label: 'clustered deferred color',
+            size,
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+        });
+        this.sceneColorView = this.sceneColorTex.createView();
 
         // G-buffer pipeline (geometry pass)
         this.gbufferPipeline = renderer.device.createRenderPipeline({
@@ -154,9 +175,45 @@ export class ClusteredDeferredRenderer extends renderer.Renderer {
             },
             fragment: {
                 module: renderer.device.createShaderModule({ code: shaders.clusteredDeferredFullscreenFragSrc }),
-                targets: [ { format: renderer.canvasFormat } ]
+                targets: [ { format: 'rgba8unorm' } ]
             }
         });
+
+        // Toon compute
+        this.ppOutputTex = renderer.device.createTexture({ label: 'toon out', size, format: 'rgba8unorm', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+        this.ppOutputView = this.ppOutputTex.createView();
+        this.ppComputeBGL = renderer.device.createBindGroupLayout({
+            label: 'toon compute BGL',
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: {} },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'depth' } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba8unorm' } },
+                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+            ]
+        });
+        this.ppUniformsBuffer = renderer.device.createBuffer({ label: 'toon uniforms', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        renderer.device.queue.writeBuffer(this.ppUniformsBuffer, 0, new Float32Array([this.toonLevels, this.toonThreshold, 0, 0]));
+        this.ppComputeBG = renderer.device.createBindGroup({
+            label: 'toon compute BG', layout: this.ppComputeBGL,
+            entries: [
+                { binding: 0, resource: this.sceneColorView },
+                { binding: 1, resource: this.depthTextureView },
+                { binding: 2, resource: this.ppOutputView },
+                { binding: 3, resource: { buffer: this.ppUniformsBuffer } }
+            ]
+        });
+        this.ppComputePipeline = renderer.device.createComputePipeline({
+            label: 'toon compute pipeline',
+            layout: renderer.device.createPipelineLayout({ bindGroupLayouts: [ this.ppComputeBGL ] }),
+            compute: { module: renderer.device.createShaderModule({ code: shaders.postProcessingComputeSrc }), entryPoint: 'main' }
+        });
+
+        // Copy pipeline to present to canvas
+        this.copyBGL = renderer.device.createBindGroupLayout({ label: 'copy BGL', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} } ] });
+        const copySampler = renderer.device.createSampler({ magFilter: 'nearest', minFilter: 'nearest' });
+        this.copyFromToonBG = renderer.device.createBindGroup({ label: 'copy BG toon', layout: this.copyBGL, entries: [ { binding: 0, resource: this.ppOutputView }, { binding: 1, resource: copySampler } ] });
+        this.copyFromSceneBG = renderer.device.createBindGroup({ label: 'copy BG scene', layout: this.copyBGL, entries: [ { binding: 0, resource: this.sceneColorView }, { binding: 1, resource: copySampler } ] });
+        this.copyPipeline = renderer.device.createRenderPipeline({ label: 'copy pipeline', layout: renderer.device.createPipelineLayout({ bindGroupLayouts: [ this.copyBGL ] }), vertex: { module: renderer.device.createShaderModule({ code: shaders.fullscreenCopyVertSrc }) }, fragment: { module: renderer.device.createShaderModule({ code: shaders.fullscreenCopyFragSrc }), targets: [ { format: renderer.canvasFormat } ] } });
     }
 
     override draw() {
@@ -195,11 +252,10 @@ export class ClusteredDeferredRenderer extends renderer.Renderer {
 
         gbufPass.end();
 
-        // - run the fullscreen pass, which reads from the G-buffer and performs lighting calculations
-        const canvasTextureView = renderer.context.getCurrentTexture().createView();
+        // - run the fullscreen pass, which reads from the G-buffer and performs lighting calculations into offscreen color
         const fsPass = encoder.beginRenderPass({
             label: "clustered deferred lighting pass",
-            colorAttachments: [ { view: canvasTextureView, clearValue: [0,0,0,0], loadOp: "clear", storeOp: "store" } ]
+            colorAttachments: [ { view: this.sceneColorView, clearValue: [0,0,0,0], loadOp: "clear", storeOp: "store" } ]
         });
         fsPass.setPipeline(this.fullscreenPipeline);
         fsPass.setBindGroup(0, this.sceneUniformsBindGroup);
@@ -207,6 +263,37 @@ export class ClusteredDeferredRenderer extends renderer.Renderer {
         fsPass.draw(3);
         fsPass.end();
 
+        // Toon compute (optional)
+        if (this.toonEnabled) {
+            const computePass = encoder.beginComputePass({ label: 'toon compute pass' });
+            computePass.setPipeline(this.ppComputePipeline);
+            computePass.setBindGroup(0, this.ppComputeBG);
+            const wgX = Math.ceil(renderer.canvas.width / 8);
+            const wgY = Math.ceil(renderer.canvas.height / 8);
+            computePass.dispatchWorkgroups(wgX, wgY);
+            computePass.end();
+        }
+
+        // Present
+        const canvasTextureView = renderer.context.getCurrentTexture().createView();
+        const copyPass = encoder.beginRenderPass({ label: 'present pass', colorAttachments: [ { view: canvasTextureView, clearValue: [0,0,0,0], loadOp: 'clear', storeOp: 'store' } ] });
+        copyPass.setPipeline(this.copyPipeline);
+        copyPass.setBindGroup(0, this.toonEnabled ? this.copyFromToonBG : this.copyFromSceneBG);
+        copyPass.draw(3);
+        copyPass.end();
+
         renderer.device.queue.submit([encoder.finish()]);
+    }
+
+    override setToonEnabled(enabled: boolean): void {
+        this.toonEnabled = enabled;
+    }
+    override setToonLevels(levels: number): void {
+        this.toonLevels = levels;
+        renderer.device.queue.writeBuffer(this.ppUniformsBuffer, 0, new Float32Array([this.toonLevels, this.toonThreshold, 0, 0]));
+    }
+    override setToonThreshold(threshold: number): void {
+        this.toonThreshold = threshold;
+        renderer.device.queue.writeBuffer(this.ppUniformsBuffer, 0, new Float32Array([this.toonLevels, this.toonThreshold, 0, 0]));
     }
 }

@@ -51,6 +51,28 @@ function setRenderer(mode: string) {
 
 const renderModes = { naive: 'naive', forwardPlus: 'forward+', clusteredDeferred: 'clustered deferred' };
 let renderModeController = gui.add({ mode: renderModes.naive }, 'mode', renderModes);
-renderModeController.onChange(setRenderer);
 
 setRenderer(renderModeController.getValue());
+
+// Toon post-process controls
+const toon = { enabled: false, levels: 4, threshold: 0.0025 };
+const toonFolder = gui.addFolder('Toon');
+toonFolder.add(toon, 'enabled').name('Enabled').onChange((v: boolean) => { renderer?.setToonEnabled(v); });
+toonFolder.add(toon, 'levels', 2, 8, 1).name('Levels').onChange((v: number) => { renderer?.setToonLevels(v); });
+toonFolder.add(toon, 'threshold', 0.0001, 0.02, 0.0001).name('Edge Threshold').onChange((v: number) => { renderer?.setToonThreshold(v); });
+toonFolder.open();
+
+// Apply toon settings to the active renderer when switching modes
+function applyToonSettings() {
+    renderer?.setToonEnabled(toon.enabled);
+    renderer?.setToonLevels(toon.levels);
+    renderer?.setToonThreshold(toon.threshold);
+}
+
+// Reapply toon settings on renderer change
+renderModeController.onChange((v: string) => { setRenderer(v); applyToonSettings(); });
+
+// Initial apply
+applyToonSettings();
+
+
