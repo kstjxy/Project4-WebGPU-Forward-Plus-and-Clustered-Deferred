@@ -46,6 +46,7 @@ export const constants = {
     maxLightsPerCluster: 1000
 };
 
+console.log(constants);
 // =================================
 
 function evalShaderRaw(raw: string) {
