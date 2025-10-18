@@ -8,31 +8,26 @@ WebGL Forward+ and Clustered Deferred Shading
 * Tested on: Windows 11, i7-14700K @ 3.40GHz, 64GB RAM, NVIDIA GeForce RTX 4080 SUPER
 
 ### Live Demo
-[![](img/thumb.png)](http://TODO.github.io/Project4-WebGPU-Forward-Plus-and-Clustered-Deferred)
+
+Demo Link
+
+![868f6d25ebd713d86ca69057c86bafb7](https://github.com/user-attachments/assets/27fe3d6e-09e8-455e-968b-84effec84344)
+
+
+
 ### Demo Video/GIF
-[![](img/video.mp4)](TODO)
-### (TODO: Your README)
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
-This assignment has a considerable amount of performance analysis compared
-to implementation work. Complete the implementation early to leave time!
-### Credits
-- [Vite](https://vitejs.dev/)
-- [loaders.gl](https://loaders.gl/)
-- [dat.GUI](https://github.com/dataarts/dat.gui)
-- [stats.js](https://github.com/mrdoob/stats.js)
-- [wgpu-matrix](https://github.com/greggman/wgpu-matrix)
+![demoGif-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/be86c41e-2dc0-4c0c-9e45-1db672f37c06)
 
 Feature Description
 -------------------
 
-Naive (Forward)
+### Naive (Forward)
 - Camera uniforms: per‑frame view‑projection matrix uploaded and bound to the vertex stage.
 - Vertex output: world position, normal, UV forwarded to fragment.
 - Alpha cutoff: discards fragments with low alpha for masked materials.
 - Lighting: fragment loops over every light in a storage buffer; uses physically‑reasonable distance falloff with a hard radius clamp.
 
-Forward+ (Clustered Forward)
+### Forward+ (Clustered Forward)
 - Light clustering compute: partitions the view frustum into a 3D grid (XY tiles in NDC, Z slices via logarithmic splitting).
 - Cluster bounds: reconstructs each cluster’s 8 NDC corners to view space with the inverse projection, builds a view‑space AABB.
 - Light assignment: transforms light positions to view space and assigns them to clusters using an efficient AABB–sphere overlap; stores per‑cluster light lists in a flat [count, indices…] buffer.
@@ -40,7 +35,7 @@ Forward+ (Clustered Forward)
 - Host wiring: new storage buffer for cluster lists; dispatches the clustering pass before the geometry pass; tunable clusterCountX/Y/Z and maxLightsPerCluster.
 - Polish: fixed banding by matching Y conventions; constants aligned with reference; optional toon post‑process can be applied after shading.
 
-Clustered Deferred
+### Clustered Deferred
 - Reuses Forward+ clustering: same compute pass and cluster light list.
 - G‑buffer pass: geometry writes
   - Position (world) to rgba16float
@@ -51,8 +46,10 @@ Clustered Deferred
 - Presentation: renders to an offscreen color target; optional toon post‑process (banded ramp + depth‑edge outlines) runs as a compute pass; final copy to the canvas.
 - Robustness: correct UV Y‑flip in fullscreen, Y‑flip in cluster indexing, and nearest sampling for exact G‑buffer fetches.
 
-Toon Shading (Extra Credit)
----------------------------
+### Toon Shading (Extra Credit)
+![465fc5e931928ced769aaa53b99e01f4](https://github.com/user-attachments/assets/4e38c597-faf5-427e-80eb-2e809d1cdf9c)
+
+![ToonGif-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/bd053150-3bcc-4b48-b6af-18be4a2839e0)
 
 Overview
 - Applies a post‑process toon effect on top of Forward+ and Clustered Deferred.
@@ -73,6 +70,13 @@ Controls
 - Levels: number of luminance bands (integer).
 - Edge Threshold: sensitivity of the depth‑based edge detector (lower = more/stronger outlines).
 - GUI wiring: `src/main.ts` updates the active renderer’s toon uniforms; both Forward+ and Clustered Deferred implement setters.
+<img width="396" height="306" alt="7afe5b47bc5b87d47162b86a35d8bebb" src="https://github.com/user-attachments/assets/81f9360e-1fdc-449d-a7ce-0f8d0106bd2b" />
+
+| Toon Shading Off | Level 3 Toon Shading | Level 8 Toon Shading |
+|:----------------:|:--------------------:|:--------------------:|
+| <img src="https://github.com/user-attachments/assets/dce0d77d-9add-4dfe-95dc-4d7e63cea8d5" width="280"/> | <img src="https://github.com/user-attachments/assets/a3528eba-93be-4a07-bd51-cb3bb4f455ca" width="280"/> | <img src="https://github.com/user-attachments/assets/f5505c82-2687-4ca5-9884-d6861844b011" width="280"/> |
+| **Description:** Smooth lighting, no quantization. | **Description:** Coarse 3-level quantization, strong banding. | **Description:** 8-level quantization, smoother transition but still stylized. |
+
 
 Implementation Notes
 - Compute shader: `src/shaders/post_processing.cs.wgsl`
@@ -93,12 +97,17 @@ Limitations and Extensions
 - Depth‑only edges can miss intra‑surface edges; adding normal‑ and/or albedo‑based edges from the G‑buffer improves line quality.
 - Quantization is uniform in luminance; a custom ramp texture would enable art‑directed banding/colors.
 
+
 Performance Analysis
 --------------------
 
 Summary
 - Clustered Deferred is consistently faster than Forward+ across all light counts tested, and the gap widens as lights increase.
 - Forward+ is a big win over Naive, but becomes fragment-cost bound with high light counts and overdraw; Deferred shifts work to a memory/bandwidth pattern that scales better with many lights.
+
+<img width="1580" height="980" alt="output" src="https://github.com/user-attachments/assets/56101760-4f7c-47d4-919c-c42e6ec29507" />
+
+<img width="1580" height="980" alt="output (1)" src="https://github.com/user-attachments/assets/d8d92425-c4ab-43bd-a8b4-1ec5f90e08f0" />
 
 Which Is Faster?
 - Clustered Deferred wins everywhere in the data. Example speedups versus Forward+:
@@ -148,6 +157,9 @@ Feature Analysis: Toon Shading
   - Levels: has negligible cost (it’s a few ALU ops).
   - Edge threshold: no cost change; only affects which pixels become black.
 
-Credits
--------
-- Vite, loaders.gl, dat.GUI, stats.js, wgpu-matrix
+### Credits
+- [Vite](https://vitejs.dev/)
+- [loaders.gl](https://loaders.gl/)
+- [dat.GUI](https://github.com/dataarts/dat.gui)
+- [stats.js](https://github.com/mrdoob/stats.js)
+- [wgpu-matrix](https://github.com/greggman/wgpu-matrix)
