@@ -146,7 +146,7 @@ export abstract class Renderer {
         this.frameRequestId = requestAnimationFrame((t) => this.onFrame(t));
     }
 
-    // Optional: post-process toon controls (no-op by default)
+    // post-process toon controls
     setToonEnabled(_enabled: boolean): void { /* no-op */ }
     setToonLevels(_levels: number): void { /* no-op */ }
     setToonThreshold(_threshold: number): void { /* no-op */ }
